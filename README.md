@@ -4,6 +4,8 @@ A self-contained Contacts REST API built with **FastAPI** + **SQLAlchemy**, back
 **in-memory SQLite database** by default. No external database, container, or migration
 step is needed — start the process and the API is ready.
 
+<!-- test: verifying Qodo PR review integration -->
+
 ## Quickstart
 
 ```bash
