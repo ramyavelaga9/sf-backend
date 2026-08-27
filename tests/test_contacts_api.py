@@ -35,6 +35,59 @@ def test_duplicate_email_conflicts(client, payload):
     assert response.status_code == 409
 
 
+def test_create_contact_without_photo_defaults_to_none(client, payload):
+    response = client.post(BASE, json=payload)
+    assert response.json()["photo_url"] is None
+
+
+def test_create_contact_with_photo(client, payload):
+    photo = "data:image/png;base64,aGVsbG8="
+    response = client.post(BASE, json={**payload, "photo_url": photo})
+    assert response.status_code == 201
+    assert response.json()["photo_url"] == photo
+
+
+def test_photo_url_must_be_a_data_url(client, payload):
+    response = client.post(BASE, json={**payload, "photo_url": "not-a-photo"})
+    assert response.status_code == 422
+
+
+def test_photo_url_rejects_oversized_payload(client, payload):
+    oversized = "data:image/png;base64," + "a" * 2_000_000
+    response = client.post(BASE, json={**payload, "photo_url": oversized})
+    assert response.status_code == 422
+
+
+def test_put_omitting_photo_clears_it(client, payload):
+    photo = "data:image/png;base64,aGVsbG8="
+    contact_id = client.post(BASE, json={**payload, "photo_url": photo}).json()["id"]
+
+    response = client.put(
+        f"{BASE}/{contact_id}",
+        json={"first_name": "Grace", "last_name": "Hopper", "email": "grace@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["photo_url"] is None  # PUT is a full replace
+
+
+def test_patch_leaves_photo_untouched_when_omitted(client, payload):
+    photo = "data:image/png;base64,aGVsbG8="
+    contact_id = client.post(BASE, json={**payload, "photo_url": photo}).json()["id"]
+
+    response = client.patch(f"{BASE}/{contact_id}", json={"phone": "+1-000-000-0000"})
+    assert response.status_code == 200
+    assert response.json()["photo_url"] == photo
+
+
+def test_patch_null_removes_photo(client, payload):
+    photo = "data:image/png;base64,aGVsbG8="
+    contact_id = client.post(BASE, json={**payload, "photo_url": photo}).json()["id"]
+
+    response = client.patch(f"{BASE}/{contact_id}", json={"photo_url": None})
+    assert response.status_code == 200
+    assert response.json()["photo_url"] is None
+
+
 def test_get_contact(client, payload):
     contact_id = client.post(BASE, json=payload).json()["id"]
     response = client.get(f"{BASE}/{contact_id}")

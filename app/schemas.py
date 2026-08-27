@@ -2,6 +2,16 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
+# ~1.5 MB decoded (base64 inflates size by ~4/3), which is generous for a profile
+# photo while keeping the in-memory database and JSON payloads bounded.
+MAX_PHOTO_DATA_URL_LENGTH = 2_000_000
+
+
+def _validate_photo_data_url(value: str | None) -> str | None:
+    if value is not None and not value.startswith("data:image/"):
+        raise ValueError("photo_url must be a data URL, e.g. data:image/png;base64,...")
+    return value
+
 
 class ContactBase(BaseModel):
     """Fields shared by every contact request and response."""
@@ -31,6 +41,15 @@ class ContactBase(BaseModel):
         max_length=40,
         description="Phone number. Stored verbatim — any format is accepted.",
         examples=["+1-415-555-0101"],
+    )
+    photo_url: str | None = Field(
+        default=None,
+        max_length=MAX_PHOTO_DATA_URL_LENGTH,
+        description=(
+            "Contact photo as a data URL (e.g. `data:image/png;base64,...`). "
+            "No external file storage — the image is stored and returned verbatim."
+        ),
+        examples=[None],
     )
     company: str | None = Field(
         default=None,
@@ -69,6 +88,11 @@ class ContactBase(BaseModel):
         description="Free-form notes about the contact. No length limit.",
         examples=["Met at the SF hackathon."],
     )
+
+    @field_validator("photo_url")
+    @classmethod
+    def _check_photo_url(cls, value: str | None) -> str | None:
+        return _validate_photo_data_url(value)
 
 
 _FULL_EXAMPLE = {
@@ -126,6 +150,11 @@ class ContactUpdate(BaseModel):
         description="New email address. Must not belong to another contact.",
     )
     phone: str | None = Field(default=None, max_length=40, description="New phone number.")
+    photo_url: str | None = Field(
+        default=None,
+        max_length=MAX_PHOTO_DATA_URL_LENGTH,
+        description="New contact photo as a data URL. Send `null` to remove the existing photo.",
+    )
     company: str | None = Field(default=None, max_length=200, description="New company.")
     job_title: str | None = Field(default=None, max_length=200, description="New job title.")
     address: str | None = Field(default=None, max_length=300, description="New street address.")
@@ -134,6 +163,11 @@ class ContactUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20, description="New postal code.")
     country: str | None = Field(default=None, max_length=120, description="New country.")
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+
+    @field_validator("photo_url")
+    @classmethod
+    def _check_photo_url(cls, value: str | None) -> str | None:
+        return _validate_photo_data_url(value)
 
 
 class ContactRead(ContactBase):
