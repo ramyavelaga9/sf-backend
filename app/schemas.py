@@ -238,6 +238,14 @@ class ContactUpdate(BaseModel):
         ),
     )
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+    is_favorite: bool | None = Field(
+        default=None,
+        description=(
+            "Favorite this contact, or unfavorite it. This is the only way to "
+            "change it — POST and PUT don't accept it, so replacing a contact's "
+            "other fields can never silently clear its favorite status."
+        ),
+    )
 
     @field_validator("photo_url")
     @classmethod
@@ -254,6 +262,16 @@ class ContactUpdate(BaseModel):
             raise ValueError("addresses cannot be null — omit it to leave unchanged, or send [] to clear it")
         return value
 
+    @field_validator("is_favorite")
+    @classmethod
+    def _reject_null_favorite(cls, value: bool | None) -> bool:
+        # Same reasoning as addresses: only runs when the client actually
+        # sends the key, so omitting it to leave it unchanged still works.
+        # There's no sensible "clear to null" for a boolean flag.
+        if value is None:
+            raise ValueError("is_favorite cannot be null — omit it to leave unchanged, or send true/false")
+        return value
+
 
 class ContactRead(ContactBase):
     """A stored contact, as returned by every contact endpoint."""
@@ -266,6 +284,7 @@ class ContactRead(ContactBase):
                     **_FULL_EXAMPLE,
                     "addresses": [{**_FULL_EXAMPLE["addresses"][0], "id": 1}],
                     "id": 1,
+                    "is_favorite": False,
                     "full_name": "Ada Lovelace",
                     "created_at": "2026-08-19T16:22:58.189507Z",
                     "updated_at": "2026-08-19T16:22:58.189511Z",
@@ -276,6 +295,10 @@ class ContactRead(ContactBase):
 
     id: int = Field(description="Server-assigned identifier.", examples=[1])
     addresses: list[AddressRead] = Field(description="The contact's stored addresses, each with its own id.")
+    is_favorite: bool = Field(
+        description="Whether this contact is favorited. Favorited contacts are always listed first.",
+        examples=[False],
+    )
     created_at: datetime = Field(
         description="UTC timestamp of when the contact was created.",
         examples=["2026-08-19T16:22:58.189507Z"],
