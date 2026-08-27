@@ -369,3 +369,16 @@ def test_put_only_changing_addresses_still_bumps_updated_at(client, payload):
     )
     assert response.status_code == 200
     assert response.json()["updated_at"] != original_updated_at
+
+
+def test_addresses_over_the_cap_are_rejected(client, payload):
+    too_many = [{"type": "Home", "city": f"City {i}"} for i in range(21)]
+    response = client.post(BASE, json={**payload, "addresses": too_many})
+    assert response.status_code == 422
+
+
+def test_addresses_at_the_cap_are_accepted(client, payload):
+    exactly_max = [{"type": "Home", "city": f"City {i}"} for i in range(20)]
+    response = client.post(BASE, json={**payload, "addresses": exactly_max})
+    assert response.status_code == 201
+    assert len(response.json()["addresses"]) == 20

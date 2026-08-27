@@ -119,12 +119,12 @@ storage, the image is stored and returned verbatim. It must start with `data:ima
 and stay under ~1.5 MB decoded (~2,000,000 characters encoded), or the request is
 rejected with `422`.
 
-`addresses` is a list — a contact can have any number of addresses, each with its own
-`type` (`Home`, `Work`, or `Other`) plus `address`, `city`, `state`, `postal_code`, and
-`country`. `PUT` replaces the whole list; `PATCH` leaves it untouched unless `addresses`
-is present in the body — send `[]` to clear it, or omit the key entirely to leave it
-alone. Sending `addresses: null` is invalid (`422`) since it's ambiguous between those
-two.
+`addresses` is a list of up to 20 entries — a contact can have several addresses, each
+with its own `type` (`Home`, `Work`, or `Other`) plus `address`, `city`, `state`,
+`postal_code`, and `country`. `PUT` replaces the whole list; `PATCH` leaves it untouched
+unless `addresses` is present in the body — send `[]` to clear it, or omit the key
+entirely to leave it alone. Sending `addresses: null` is invalid (`422`) since it's
+ambiguous between those two.
 
 Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC); each address in
 the response also gets its own `id`.

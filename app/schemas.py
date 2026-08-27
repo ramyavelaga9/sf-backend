@@ -10,6 +10,10 @@ from app.models import AddressType
 # photo while keeping the in-memory database and JSON payloads bounded.
 MAX_PHOTO_DATA_URL_LENGTH = 2_000_000
 
+# Plenty for any real contact, while keeping a single request from creating
+# (and a single response from returning) an unbounded number of address rows.
+MAX_ADDRESSES_PER_CONTACT = 20
+
 _PHOTO_DATA_URL_PATTERN = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,(?P<payload>.+)$", re.DOTALL)
 
 
@@ -122,6 +126,7 @@ class ContactBase(BaseModel):
     )
     addresses: list[AddressCreate] = Field(
         default_factory=list,
+        max_length=MAX_ADDRESSES_PER_CONTACT,
         description="The contact's addresses. Each has its own `type` (Home, Work, or Other).",
     )
     notes: str | None = Field(
@@ -219,6 +224,7 @@ class ContactUpdate(BaseModel):
     job_title: str | None = Field(default=None, max_length=200, description="New job title.")
     addresses: list[AddressCreate] | None = Field(
         default=None,
+        max_length=MAX_ADDRESSES_PER_CONTACT,
         description=(
             "Replace the contact's entire address list. Omit to leave addresses "
             "unchanged; send an empty list to clear them. `null` is invalid — "
