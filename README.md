@@ -126,8 +126,13 @@ unless `addresses` is present in the body — send `[]` to clear it, or omit the
 entirely to leave it alone. Sending `addresses: null` is invalid (`422`) since it's
 ambiguous between those two.
 
-Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC); each address in
-the response also gets its own `id`.
+Responses add `id`, `full_name`, `created_at`, `updated_at` (UTC), and `is_favorite`;
+each address in the response also gets its own `id`.
+
+`is_favorite` can't be set via `POST`/`PUT` — a new contact always starts unfavorited,
+and replacing a contact's other fields can never silently unfavorite it. `PATCH
+{"is_favorite": true}` (or `false`) is the only way to change it; sending `null` is
+invalid (`422`).
 
 ### List query parameters
 
@@ -138,6 +143,9 @@ the response also gets its own `id`.
 | `offset` | `0` | |
 | `sort_by` | `id` | `id`, `first_name`, `last_name`, `email`, `company`, `created_at`, `updated_at` |
 | `order` | `asc` | `asc` or `desc` |
+
+Favorited contacts are always listed first, regardless of `sort_by`/`order` — those
+only decide the order within the favorited and non-favorited groups.
 
 List responses are wrapped so clients can paginate:
 

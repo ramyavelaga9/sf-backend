@@ -397,3 +397,72 @@ def test_addresses_at_the_cap_are_accepted(client, payload):
     response = client.post(BASE, json={**payload, "addresses": exactly_max})
     assert response.status_code == 201
     assert len(response.json()["addresses"]) == 20
+
+
+def test_new_contact_is_not_favorited_by_default(client, payload):
+    response = client.post(BASE, json=payload)
+    assert response.json()["is_favorite"] is False
+
+
+def test_create_rejects_is_favorite(client, payload):
+    response = client.post(BASE, json={**payload, "is_favorite": True})
+    assert response.status_code == 422
+
+
+def test_put_rejects_is_favorite(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    response = client.put(f"{BASE}/{contact_id}", json={**payload, "is_favorite": True})
+    assert response.status_code == 422
+
+
+def test_patch_toggles_is_favorite(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    favorited = client.patch(f"{BASE}/{contact_id}", json={"is_favorite": True})
+    assert favorited.status_code == 200
+    assert favorited.json()["is_favorite"] is True
+
+    unfavorited = client.patch(f"{BASE}/{contact_id}", json={"is_favorite": False})
+    assert unfavorited.status_code == 200
+    assert unfavorited.json()["is_favorite"] is False
+
+
+def test_patch_rejects_explicit_null_is_favorite(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    response = client.patch(f"{BASE}/{contact_id}", json={"is_favorite": None})
+    assert response.status_code == 422
+
+
+def test_put_does_not_clear_is_favorite(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+    client.patch(f"{BASE}/{contact_id}", json={"is_favorite": True})
+
+    response = client.put(
+        f"{BASE}/{contact_id}",
+        json={"first_name": "Grace", "last_name": "Hopper", "email": "grace@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["is_favorite"] is True
+
+
+def test_favorited_contacts_are_listed_first_regardless_of_sort(client, payload):
+    client.post(BASE, json={**payload, "first_name": "Zoe", "email": "zoe@example.com"})
+    favorite_id = client.post(BASE, json={**payload, "first_name": "Amy", "email": "amy@example.com"}).json()["id"]
+    client.patch(f"{BASE}/{favorite_id}", json={"is_favorite": True})
+
+    # Sorting by first_name ascending would normally put "Amy" before "Zoe"
+    # anyway, so sort descending to prove the favorite wins despite that.
+    response = client.get(BASE, params={"sort_by": "first_name", "order": "desc"})
+    names = [item["first_name"] for item in response.json()["items"]]
+    assert names[0] == "Amy"
+
+
+def test_unfavoriting_drops_a_contact_back_into_normal_order(client, payload):
+    contact_id = client.post(BASE, json={**payload, "first_name": "Amy", "email": "amy@example.com"}).json()["id"]
+    client.post(BASE, json={**payload, "first_name": "Bob", "email": "bob@example.com"})
+    client.patch(f"{BASE}/{contact_id}", json={"is_favorite": True})
+    client.patch(f"{BASE}/{contact_id}", json={"is_favorite": False})
+
+    response = client.get(BASE, params={"sort_by": "first_name", "order": "asc"})
+    names = [item["first_name"] for item in response.json()["items"]]
+    assert names == ["Amy", "Bob"]

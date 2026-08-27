@@ -55,7 +55,9 @@ def list_contacts(
     if sort_by not in SORTABLE_FIELDS:
         sort_by = "id"
     column = getattr(Contact, sort_by)
-    stmt = stmt.order_by(column.desc() if order == "desc" else column.asc())
+    # Favorites are always pinned above everything else; the requested sort
+    # only decides the order within each of those two groups.
+    stmt = stmt.order_by(Contact.is_favorite.desc(), column.desc() if order == "desc" else column.asc())
 
     items = db.execute(stmt.limit(limit).offset(offset)).scalars().all()
     return list(items), total
