@@ -1,5 +1,7 @@
+from sqlalchemy import select
+
 from app.database import SessionLocal
-from app.models import Contact
+from app.models import Address, Contact
 
 BASE = "/api/v1/contacts"
 
@@ -97,7 +99,10 @@ def test_reading_does_not_revalidate_a_stored_photo(client, payload):
     # another process) bypasses request-side validation entirely. Reads must
     # still serve it rather than re-decoding — and rejecting — trusted data.
     with SessionLocal() as db:
-        contact = Contact(**payload, photo_url="not-a-valid-data-url")
+        contact = Contact(
+            **{k: v for k, v in payload.items() if k != "addresses"},
+            photo_url="not-a-valid-data-url",
+        )
         db.add(contact)
         db.commit()
         contact_id = contact.id
@@ -225,3 +230,79 @@ def test_delete_contact(client, payload):
 def test_root_lists_entrypoints(client):
     body = client.get("/").json()
     assert body["contacts"] == BASE
+
+
+def test_create_contact_with_multiple_addresses(client, payload):
+    response = client.post(
+        BASE,
+        json={
+            **payload,
+            "addresses": [
+                {"type": "Home", "city": "San Francisco", "state": "CA", "country": "USA"},
+                {"type": "Work", "city": "New York", "state": "NY", "country": "USA"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+    addresses = response.json()["addresses"]
+    assert {a["type"] for a in addresses} == {"Home", "Work"}
+    assert all(a["id"] > 0 for a in addresses)
+
+
+def test_create_contact_with_no_addresses(client, payload):
+    response = client.post(BASE, json={**payload, "addresses": []})
+    assert response.status_code == 201
+    assert response.json()["addresses"] == []
+
+
+def test_create_rejects_an_unknown_address_type(client, payload):
+    response = client.post(BASE, json={**payload, "addresses": [{"type": "Vacation", "city": "Reno"}]})
+    assert response.status_code == 422
+
+
+def test_put_replaces_the_whole_address_list(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    response = client.put(
+        f"{BASE}/{contact_id}",
+        json={
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "email": "ada@example.com",
+            "addresses": [{"type": "Other", "city": "Reno"}],
+        },
+    )
+    assert response.status_code == 200
+    addresses = response.json()["addresses"]
+    assert len(addresses) == 1
+    assert addresses[0]["type"] == "Other" and addresses[0]["city"] == "Reno"
+
+
+def test_patch_without_addresses_key_leaves_them_untouched(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    response = client.patch(f"{BASE}/{contact_id}", json={"phone": "+1-000-000-0000"})
+    assert response.status_code == 200
+    assert len(response.json()["addresses"]) == 1
+
+
+def test_patch_with_an_empty_address_list_clears_it(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    response = client.patch(f"{BASE}/{contact_id}", json={"addresses": []})
+    assert response.status_code == 200
+    assert response.json()["addresses"] == []
+
+
+def test_deleting_a_contact_cascades_to_its_addresses(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    with SessionLocal() as db:
+        stmt = select(Address).where(Address.contact_id == contact_id)
+        assert len(db.execute(stmt).scalars().all()) == 1
+
+    assert client.delete(f"{BASE}/{contact_id}").status_code == 204
+
+    with SessionLocal() as db:
+        stmt = select(Address).where(Address.contact_id == contact_id)
+        assert db.execute(stmt).scalars().all() == []
