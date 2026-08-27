@@ -107,9 +107,14 @@ also read):
 (case-insensitive). Everything else is optional.
 
 ```
-first_name, last_name, email, phone, company, job_title,
+first_name, last_name, email, phone, photo_url, company, job_title,
 address, city, state, postal_code, country, notes
 ```
+
+`photo_url` holds a data URL (e.g. `data:image/png;base64,...`) — there is no file
+storage, the image is stored and returned verbatim. It must start with `data:image/`
+and stay under ~1.5 MB decoded (~2,000,000 characters encoded), or the request is
+rejected with `422`.
 
 Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC).
 

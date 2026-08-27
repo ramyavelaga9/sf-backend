@@ -1,6 +1,27 @@
+import base64
+import re
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+
+# ~1.5 MB decoded (base64 inflates size by ~4/3), which is generous for a profile
+# photo while keeping the in-memory database and JSON payloads bounded.
+MAX_PHOTO_DATA_URL_LENGTH = 2_000_000
+
+_PHOTO_DATA_URL_PATTERN = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,(?P<payload>.+)$", re.DOTALL)
+
+
+def _validate_photo_data_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    match = _PHOTO_DATA_URL_PATTERN.match(value)
+    if match is None:
+        raise ValueError("photo_url must be a data URL, e.g. data:image/png;base64,...")
+    try:
+        base64.b64decode(match.group("payload"), validate=True)
+    except ValueError as exc:
+        raise ValueError("photo_url's base64 payload is not valid") from exc
+    return value
 
 
 class ContactBase(BaseModel):
@@ -31,6 +52,15 @@ class ContactBase(BaseModel):
         max_length=40,
         description="Phone number. Stored verbatim — any format is accepted.",
         examples=["+1-415-555-0101"],
+    )
+    photo_url: str | None = Field(
+        default=None,
+        max_length=MAX_PHOTO_DATA_URL_LENGTH,
+        description=(
+            "Contact photo as a data URL (e.g. `data:image/png;base64,...`). "
+            "No external file storage — the image is stored and returned verbatim."
+        ),
+        examples=[None],
     )
     company: str | None = Field(
         default=None,
@@ -71,6 +101,24 @@ class ContactBase(BaseModel):
     )
 
 
+class _PhotoWriteValidation(BaseModel):
+    """
+    Mixin applied only to the write schemas (Create/Replace/Update).
+
+    `ContactRead` deliberately does *not* include this: values already in the
+    database were validated on the way in, so re-decoding base64 on every read
+    — including all 200 items a single list page can return — would be pure
+    waste.
+    """
+
+    # check_fields=False: this mixin declares no fields of its own — photo_url
+    # comes from whichever concrete model combines it with `ContactBase`.
+    @field_validator("photo_url", check_fields=False)
+    @classmethod
+    def _check_photo_url(cls, value: str | None) -> str | None:
+        return _validate_photo_data_url(value)
+
+
 _FULL_EXAMPLE = {
     "first_name": "Ada",
     "last_name": "Lovelace",
@@ -88,13 +136,13 @@ _FULL_EXAMPLE = {
 _MINIMAL_EXAMPLE = {"first_name": "Grace", "last_name": "Hopper", "email": "grace@example.com"}
 
 
-class ContactCreate(ContactBase):
+class ContactCreate(ContactBase, _PhotoWriteValidation):
     """Body of `POST /api/v1/contacts`. Only the two names and email are required."""
 
     model_config = ConfigDict(json_schema_extra={"examples": [_FULL_EXAMPLE, _MINIMAL_EXAMPLE]})
 
 
-class ContactReplace(ContactBase):
+class ContactReplace(ContactBase, _PhotoWriteValidation):
     """
     Body of `PUT /api/v1/contacts/{contact_id}`.
 
@@ -126,6 +174,11 @@ class ContactUpdate(BaseModel):
         description="New email address. Must not belong to another contact.",
     )
     phone: str | None = Field(default=None, max_length=40, description="New phone number.")
+    photo_url: str | None = Field(
+        default=None,
+        max_length=MAX_PHOTO_DATA_URL_LENGTH,
+        description="New contact photo as a data URL. Send `null` to remove the existing photo.",
+    )
     company: str | None = Field(default=None, max_length=200, description="New company.")
     job_title: str | None = Field(default=None, max_length=200, description="New job title.")
     address: str | None = Field(default=None, max_length=300, description="New street address.")
@@ -134,6 +187,11 @@ class ContactUpdate(BaseModel):
     postal_code: str | None = Field(default=None, max_length=20, description="New postal code.")
     country: str | None = Field(default=None, max_length=120, description="New country.")
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
+
+    @field_validator("photo_url")
+    @classmethod
+    def _check_photo_url(cls, value: str | None) -> str | None:
+        return _validate_photo_data_url(value)
 
 
 class ContactRead(ContactBase):
