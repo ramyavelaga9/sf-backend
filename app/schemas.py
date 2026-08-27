@@ -33,6 +33,12 @@ def _validate_photo_data_url(value: str | None) -> str | None:
 class AddressBase(BaseModel):
     """Fields shared by every address request and response."""
 
+    # AddressBase is its own hierarchy, separate from ContactBase — its
+    # extra="forbid" doesn't propagate here, so an unknown field nested
+    # inside one address entry (e.g. a typo'd "zip" instead of "postal_code")
+    # needs the same rejection set explicitly.
+    model_config = ConfigDict(extra="forbid")
+
     type: AddressType = Field(description="Home, Work, or Other.", examples=["Home"])
     address: str | None = Field(
         default=None,

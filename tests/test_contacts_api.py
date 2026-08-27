@@ -325,6 +325,21 @@ def test_legacy_flat_address_fields_are_rejected(client, payload):
     assert response.status_code == 422
 
 
+def test_create_rejects_an_unknown_field_nested_in_an_address(client, payload):
+    response = client.post(BASE, json={**payload, "addresses": [{"type": "Home", "zip": "94105"}]})
+    assert response.status_code == 422
+
+
+def test_patch_rejects_an_unknown_field_nested_in_an_address(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    response = client.patch(
+        f"{BASE}/{contact_id}",
+        json={"addresses": [{"type": "Home", "zip": "94105"}]},
+    )
+    assert response.status_code == 422
+
+
 def test_address_type_is_stored_as_its_value_not_its_member_name(client, payload):
     contact_id = client.post(BASE, json=payload).json()["id"]
 
