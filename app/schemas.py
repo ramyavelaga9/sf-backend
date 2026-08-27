@@ -1,3 +1,5 @@
+import base64
+import re
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
@@ -6,10 +8,19 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, fie
 # photo while keeping the in-memory database and JSON payloads bounded.
 MAX_PHOTO_DATA_URL_LENGTH = 2_000_000
 
+_PHOTO_DATA_URL_PATTERN = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,(?P<payload>.+)$", re.DOTALL)
+
 
 def _validate_photo_data_url(value: str | None) -> str | None:
-    if value is not None and not value.startswith("data:image/"):
+    if value is None:
+        return None
+    match = _PHOTO_DATA_URL_PATTERN.match(value)
+    if match is None:
         raise ValueError("photo_url must be a data URL, e.g. data:image/png;base64,...")
+    try:
+        base64.b64decode(match.group("payload"), validate=True)
+    except ValueError as exc:
+        raise ValueError("photo_url's base64 payload is not valid") from exc
     return value
 
 

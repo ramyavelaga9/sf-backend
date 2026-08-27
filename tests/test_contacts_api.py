@@ -52,6 +52,16 @@ def test_photo_url_must_be_a_data_url(client, payload):
     assert response.status_code == 422
 
 
+def test_photo_url_requires_the_base64_marker(client, payload):
+    response = client.post(BASE, json={**payload, "photo_url": "data:image/png,plain text"})
+    assert response.status_code == 422
+
+
+def test_photo_url_rejects_invalid_base64_payload(client, payload):
+    response = client.post(BASE, json={**payload, "photo_url": "data:image/png;base64,!!!!"})
+    assert response.status_code == 422
+
+
 def test_photo_url_rejects_oversized_payload(client, payload):
     oversized = "data:image/png;base64," + "a" * 2_000_000
     response = client.post(BASE, json={**payload, "photo_url": oversized})
