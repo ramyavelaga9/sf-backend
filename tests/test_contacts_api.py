@@ -1,3 +1,6 @@
+from app.database import SessionLocal
+from app.models import Contact
+
 BASE = "/api/v1/contacts"
 
 
@@ -87,6 +90,21 @@ def test_patch_leaves_photo_untouched_when_omitted(client, payload):
     response = client.patch(f"{BASE}/{contact_id}", json={"phone": "+1-000-000-0000"})
     assert response.status_code == 200
     assert response.json()["photo_url"] == photo
+
+
+def test_reading_does_not_revalidate_a_stored_photo(client, payload):
+    # A row already in the database (written before validation existed, or by
+    # another process) bypasses request-side validation entirely. Reads must
+    # still serve it rather than re-decoding — and rejecting — trusted data.
+    with SessionLocal() as db:
+        contact = Contact(**payload, photo_url="not-a-valid-data-url")
+        db.add(contact)
+        db.commit()
+        contact_id = contact.id
+
+    response = client.get(f"{BASE}/{contact_id}")
+    assert response.status_code == 200
+    assert response.json()["photo_url"] == "not-a-valid-data-url"
 
 
 def test_patch_null_removes_photo(client, payload):

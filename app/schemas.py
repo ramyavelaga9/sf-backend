@@ -100,7 +100,20 @@ class ContactBase(BaseModel):
         examples=["Met at the SF hackathon."],
     )
 
-    @field_validator("photo_url")
+
+class _PhotoWriteValidation(BaseModel):
+    """
+    Mixin applied only to the write schemas (Create/Replace/Update).
+
+    `ContactRead` deliberately does *not* include this: values already in the
+    database were validated on the way in, so re-decoding base64 on every read
+    — including all 200 items a single list page can return — would be pure
+    waste.
+    """
+
+    # check_fields=False: this mixin declares no fields of its own — photo_url
+    # comes from whichever concrete model combines it with `ContactBase`.
+    @field_validator("photo_url", check_fields=False)
     @classmethod
     def _check_photo_url(cls, value: str | None) -> str | None:
         return _validate_photo_data_url(value)
@@ -123,13 +136,13 @@ _FULL_EXAMPLE = {
 _MINIMAL_EXAMPLE = {"first_name": "Grace", "last_name": "Hopper", "email": "grace@example.com"}
 
 
-class ContactCreate(ContactBase):
+class ContactCreate(ContactBase, _PhotoWriteValidation):
     """Body of `POST /api/v1/contacts`. Only the two names and email are required."""
 
     model_config = ConfigDict(json_schema_extra={"examples": [_FULL_EXAMPLE, _MINIMAL_EXAMPLE]})
 
 
-class ContactReplace(ContactBase):
+class ContactReplace(ContactBase, _PhotoWriteValidation):
     """
     Body of `PUT /api/v1/contacts/{contact_id}`.
 
