@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
@@ -41,12 +41,12 @@ class Contact(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow, server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=utcnow, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=_utcnow,
-        onupdate=_utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         server_default=func.now(),
         nullable=False,
     )
@@ -67,9 +67,21 @@ class Address(Base):
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    # native_enum=False stores this as a plain VARCHAR + CHECK constraint rather
-    # than a native Postgres ENUM type, so it behaves identically on SQLite too.
-    type: Mapped[AddressType] = mapped_column(Enum(AddressType, native_enum=False), nullable=False)
+    # native_enum=False stores this as a plain VARCHAR rather than a native
+    # Postgres ENUM type, so it behaves identically on SQLite too.
+    # create_constraint=True adds the CHECK that actually enforces the allowed
+    # values at the DB layer (SQLAlchemy does not add one by default).
+    # values_callable persists the enum's *values* ("Home") rather than its
+    # member names ("HOME"), matching what the API documents and returns.
+    type: Mapped[AddressType] = mapped_column(
+        Enum(
+            AddressType,
+            native_enum=False,
+            create_constraint=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+    )
 
     address: Mapped[str | None] = mapped_column(String(300))
     city: Mapped[str | None] = mapped_column(String(120))

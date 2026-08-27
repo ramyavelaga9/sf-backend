@@ -67,6 +67,12 @@ class AddressRead(AddressBase):
 class ContactBase(BaseModel):
     """Fields shared by every contact request and response."""
 
+    # Rejects unknown fields rather than silently discarding them — a client
+    # still sending the old flat address/city/state/postal_code/country
+    # fields (from before addresses became a list) gets a clear 422 instead
+    # of a 201/200 that quietly drops the address they thought they sent.
+    model_config = ConfigDict(extra="forbid")
+
     first_name: str = Field(
         min_length=1,
         max_length=100,
@@ -192,7 +198,8 @@ class ContactUpdate(BaseModel):
     """
 
     model_config = ConfigDict(
-        json_schema_extra={"examples": [{"phone": "+1-415-555-0199", "job_title": "Chief Engineer"}]}
+        extra="forbid",
+        json_schema_extra={"examples": [{"phone": "+1-415-555-0199", "job_title": "Chief Engineer"}]},
     )
 
     first_name: str | None = Field(default=None, min_length=1, max_length=100, description="New given name.")
@@ -214,7 +221,8 @@ class ContactUpdate(BaseModel):
         default=None,
         description=(
             "Replace the contact's entire address list. Omit to leave addresses "
-            "unchanged; send an empty list to clear them."
+            "unchanged; send an empty list to clear them. `null` is invalid — "
+            "use `[]` to clear."
         ),
     )
     notes: str | None = Field(default=None, description="New notes; replaces the existing text.")
@@ -223,6 +231,16 @@ class ContactUpdate(BaseModel):
     @classmethod
     def _check_photo_url(cls, value: str | None) -> str | None:
         return _validate_photo_data_url(value)
+
+    @field_validator("addresses")
+    @classmethod
+    def _reject_null_addresses(cls, value: list[AddressCreate] | None) -> list[AddressCreate]:
+        # Only runs when the client actually sends the key (Pydantic skips
+        # "after" validators on an omitted field's default), so this can't
+        # block the omit-to-leave-unchanged case — only an explicit `null`.
+        if value is None:
+            raise ValueError("addresses cannot be null — omit it to leave unchanged, or send [] to clear it")
+        return value
 
 
 class ContactRead(ContactBase):

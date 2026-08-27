@@ -1,4 +1,6 @@
-from sqlalchemy import select
+import pytest
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal
 from app.models import Address, Contact
@@ -306,3 +308,64 @@ def test_deleting_a_contact_cascades_to_its_addresses(client, payload):
     with SessionLocal() as db:
         stmt = select(Address).where(Address.contact_id == contact_id)
         assert db.execute(stmt).scalars().all() == []
+
+
+def test_patch_rejects_explicit_null_addresses(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    response = client.patch(f"{BASE}/{contact_id}", json={"addresses": None})
+    assert response.status_code == 422
+    # And the address that was already there must survive the rejected request.
+    assert len(client.get(f"{BASE}/{contact_id}").json()["addresses"]) == 1
+
+
+def test_legacy_flat_address_fields_are_rejected(client, payload):
+    legacy_payload = {**payload, "city": "Reno", "state": "NV"}
+    response = client.post(BASE, json=legacy_payload)
+    assert response.status_code == 422
+
+
+def test_address_type_is_stored_as_its_value_not_its_member_name(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    with SessionLocal() as db:
+        # The raw column value, via a query that skips the ORM's own
+        # AddressType round-trip — the regression is about what's actually
+        # on disk (the enum's value "Home", not its member name "HOME").
+        raw_value = db.execute(text("SELECT type FROM addresses WHERE contact_id = :id"), {"id": contact_id}).scalar_one()
+    assert raw_value == "Home"
+
+
+def test_address_type_check_constraint_rejects_bad_values(client, payload):
+    contact_id = client.post(BASE, json=payload).json()["id"]
+
+    with SessionLocal() as db, pytest.raises(IntegrityError):
+        db.execute(
+            text("INSERT INTO addresses (contact_id, type) VALUES (:contact_id, 'Vacation')"),
+            {"contact_id": contact_id},
+        )
+        db.commit()
+
+
+def test_patch_addresses_only_still_bumps_updated_at(client, payload):
+    created = client.post(BASE, json=payload).json()
+    original_updated_at = created["updated_at"]
+
+    response = client.patch(
+        f"{BASE}/{created['id']}",
+        json={"addresses": [{"type": "Work", "city": "Reno"}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["updated_at"] != original_updated_at
+
+
+def test_put_only_changing_addresses_still_bumps_updated_at(client, payload):
+    created = client.post(BASE, json=payload).json()
+    original_updated_at = created["updated_at"]
+
+    response = client.put(
+        f"{BASE}/{created['id']}",
+        json={**payload, "addresses": [{"type": "Other", "city": "Reno"}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["updated_at"] != original_updated_at

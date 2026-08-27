@@ -1,7 +1,7 @@
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.models import Address, Contact
+from app.models import Address, Contact, utcnow
 from app.schemas import ContactCreate, ContactReplace, ContactUpdate
 
 SORTABLE_FIELDS = ("id", "first_name", "last_name", "email", "company", "created_at", "updated_at")
@@ -34,7 +34,9 @@ def list_contacts(
     order: str = "asc",
 ) -> tuple[list[Contact], int]:
     """Return (page of contacts, total matching count)."""
-    stmt = select(Contact)
+    # selectinload: without it, response serialization would lazy-load
+    # `addresses` once per contact — up to 200 extra queries on a full page.
+    stmt = select(Contact).options(selectinload(Contact.addresses))
 
     if search:
         pattern = f"%{search.strip().lower()}%"
@@ -74,9 +76,18 @@ def create_contact(db: Session, payload: ContactCreate) -> Contact:
     return contact
 
 
+def _replace_addresses(contact: Contact, addresses: list[dict]) -> None:
+    contact.addresses = _build_addresses(addresses)
+    # Replacing the relationship only inserts/deletes Address rows — it never
+    # touches a Contact column, so the column-level `onupdate` that normally
+    # bumps `updated_at` never fires. Set it explicitly so an address-only
+    # change is still reflected.
+    contact.updated_at = utcnow()
+
+
 def replace_contact(db: Session, contact: Contact, payload: ContactReplace) -> Contact:
     data = payload.model_dump()
-    contact.addresses = _build_addresses(data.pop("addresses"))
+    _replace_addresses(contact, data.pop("addresses"))
     for field, value in data.items():
         setattr(contact, field, _normalize_email(value) if field == "email" else value)
     db.commit()
@@ -87,7 +98,7 @@ def replace_contact(db: Session, contact: Contact, payload: ContactReplace) -> C
 def update_contact(db: Session, contact: Contact, payload: ContactUpdate) -> Contact:
     data = payload.model_dump(exclude_unset=True)
     if "addresses" in data:
-        contact.addresses = _build_addresses(data.pop("addresses"))
+        _replace_addresses(contact, data.pop("addresses"))
     for field, value in data.items():
         setattr(contact, field, _normalize_email(value) if field == "email" else value)
     db.commit()

@@ -104,7 +104,10 @@ also read):
 ### Contact fields
 
 `first_name` and `last_name` are required; `email` is required and unique
-(case-insensitive). Everything else is optional.
+(case-insensitive). Everything else is optional. Unknown fields in a request body are
+rejected with `422` rather than silently ignored — most notably, the flat
+`address`/`city`/`state`/`postal_code`/`country` fields this API used before addresses
+became a list.
 
 ```
 first_name, last_name, email, phone, photo_url, company, job_title,
@@ -119,7 +122,9 @@ rejected with `422`.
 `addresses` is a list — a contact can have any number of addresses, each with its own
 `type` (`Home`, `Work`, or `Other`) plus `address`, `city`, `state`, `postal_code`, and
 `country`. `PUT` replaces the whole list; `PATCH` leaves it untouched unless `addresses`
-is present in the body (send `[]` to clear it).
+is present in the body — send `[]` to clear it, or omit the key entirely to leave it
+alone. Sending `addresses: null` is invalid (`422`) since it's ambiguous between those
+two.
 
 Responses add `id`, `full_name`, `created_at`, and `updated_at` (UTC); each address in
 the response also gets its own `id`.
